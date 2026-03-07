@@ -7,6 +7,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -19,18 +20,17 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             TrackerTheme {
+                // Scaffold provides the basic visual structure (like top bars)
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    // We use a Column to stack the Timer on top of the Selectors
-                    Column(
+                    // We wrap MainScreen in a Box or Surface to respect the 'innerPadding'
+                    // created by enableEdgeToEdge()
+                    Surface(
                         modifier = Modifier
                             .padding(innerPadding)
-                            .padding(16.dp)
-                            .fillMaxWidth(),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                            .fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
                     ) {
-                        TimerDisplay()
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp))
-                        CategorySelector()
+                        MainScreen() // <-- This is your new "Manager" screen
                     }
                 }
             }
@@ -61,14 +61,12 @@ fun TimerDisplay() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CategorySelector() {
+fun CategorySelector(
+    selectedMain: String,
+    onMainChange: (String) -> Unit,
+    selectedSubs: SnapshotStateMap<String, Boolean>
+) {
     var expanded by remember { mutableStateOf(false) }
-    var selectedMain by remember { mutableStateOf("Cyber") }
-    val selectedSubs = remember { mutableStateMapOf<String, Boolean>() }
-
-    LaunchedEffect(selectedMain) {
-        selectedSubs.clear()
-    }
 
     Column {
         Text("Main Category", style = MaterialTheme.typography.labelLarge)
@@ -89,7 +87,7 @@ fun CategorySelector() {
                     DropdownMenuItem(
                         text = { Text(category) },
                         onClick = {
-                            selectedMain = category
+                            onMainChange(category)
                             expanded = false
                         }
                     )
@@ -110,6 +108,81 @@ fun CategorySelector() {
                 )
                 Text(sub)
             }
+        }
+    }
+}
+
+@Composable
+fun MainScreen() {
+    // 1. Centralized State
+    var seconds by remember { mutableStateOf(0) }
+    var isRunning by remember { mutableStateOf(false) }
+    var selectedMain by remember { mutableStateOf("Cyber") }
+    val selectedSubs = remember { mutableStateMapOf<String, Boolean>() }
+
+    // Logic to reset subcategories when main changes
+    LaunchedEffect(selectedMain) {
+        selectedSubs.clear()
+    }
+
+    // Logic for the timer
+    LaunchedEffect(isRunning) {
+        while (isRunning) {
+            delay(1000L)
+            seconds++
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .padding(16.dp)
+            .fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // 2. Timer UI
+        Text("Time Spent: $seconds seconds", style = MaterialTheme.typography.headlineMedium)
+        Button(onClick = { isRunning = !isRunning }) {
+            Text(if (isRunning) "Pause" else "Start")
+        }
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp))
+
+        // 3. Category Selectors
+        // Pass the state down to the selector function
+        CategorySelector(
+            selectedMain = selectedMain,
+            onMainChange = { selectedMain = it },
+            selectedSubs = selectedSubs
+        )
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        // 4. THE SAVE BUTTON
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            enabled = seconds > 0 && !isRunning, // Only save if timer stopped and > 0
+            onClick = {
+                // Collect the true subcategories (the ones set to 'true')
+                val finalSubcategories = selectedSubs.filter { it.value }.keys.toList()
+
+                // If nothing is checked, use our "unspecified" default
+                val reportSubs = if (finalSubcategories.isEmpty()) listOf("unspecified") else finalSubcategories
+
+                val newSession = ActivitySession(
+                    mainCategory = selectedMain,
+                    subCategories = reportSubs,
+                    startTime = System.currentTimeMillis(),
+                    durationSeconds = seconds.toLong()
+                )
+
+                // For now, let's print it to the console (Logcat)
+                println("SAVED SESSION: $newSession")
+
+                // Reset everything for the next session
+                seconds = 0
+            }
+        ) {
+            Text("Save Session")
         }
     }
 }
