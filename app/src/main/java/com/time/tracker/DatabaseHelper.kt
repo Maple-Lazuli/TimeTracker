@@ -80,4 +80,50 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, "Tracker.db",
         db.delete("categories", "main_name = ? AND sub_name = ?", arrayOf(main, sub))
         db.close()
     }
+
+    fun getDatabasePath(context: Context): java.io.File {
+        return context.getDatabasePath("Tracker.db")
+    }
+
+    fun getAllSessionsCursor(): android.database.Cursor {
+        val db = this.readableDatabase
+        return db.rawQuery("SELECT start_time, duration_seconds, main_category, sub_categories FROM sessions", null)
+    }
+    // In DatabaseHelper.kt
+
+    // Get time spent per category for a specific time range
+    fun getTimeByCategory(startTime: Long): Map<String, Long> {
+        val result = mutableMapOf<String, Long>()
+        val db = this.readableDatabase
+        val cursor = db.rawQuery(
+            "SELECT main_category, SUM(duration_seconds) FROM sessions WHERE start_time >= ? GROUP BY main_category",
+            arrayOf(startTime.toString())
+        )
+        if (cursor.moveToFirst()) {
+            do {
+                result[cursor.getString(0)] = cursor.getLong(1)
+            } while (cursor.moveToNext())
+        }
+        cursor.close()
+        return result
+    }
+
+    // Get raw data for the line charts (Week and All Time)
+    fun getRawSessions(startTime: Long = 0): List<SessionData> {
+        val list = mutableListOf<SessionData>()
+        val db = this.readableDatabase
+        val cursor = db.rawQuery(
+            "SELECT start_time, duration_seconds, main_category, sub_categories FROM sessions WHERE start_time >= ? ORDER BY start_time ASC",
+            arrayOf(startTime.toString())
+        )
+        if (cursor.moveToFirst()) {
+            do {
+                list.add(SessionData(cursor.getLong(0), cursor.getLong(1), cursor.getString(2), cursor.getString(3)))
+            } while (cursor.moveToNext())
+        }
+        cursor.close()
+        return list
+    }
+
+    data class SessionData(val timestamp: Long, val duration: Long, val main: String, val subs: String)
 }
