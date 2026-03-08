@@ -139,7 +139,7 @@ fun MainNavigation(dbHelper: DatabaseHelper) {
 
 @Composable
 fun MainScreen(dbHelper: DatabaseHelper) {
-    // We switch to Long to track milliseconds for better precision
+
     var elapsedMs by remember { mutableLongStateOf(0L) }
     var isRunning by remember { mutableStateOf(false) }
     var startTime by remember { mutableLongStateOf(0L) }
@@ -148,14 +148,14 @@ fun MainScreen(dbHelper: DatabaseHelper) {
     var selectedMain by remember { mutableStateOf(categoryMap.keys.firstOrNull() ?: "") }
     val selectedSubs = remember { mutableStateMapOf<String, Boolean>() }
 
-    // High-precision Timer Logic
+
     LaunchedEffect(isRunning) {
         if (isRunning) {
-            // Adjust start time to account for already elapsed time (resuming)
+
             startTime = System.currentTimeMillis() - elapsedMs
             while (isRunning) {
                 elapsedMs = System.currentTimeMillis() - startTime
-                delay(100L) // Update every 100ms
+                delay(100L)
             }
         }
     }
@@ -163,7 +163,7 @@ fun MainScreen(dbHelper: DatabaseHelper) {
     LaunchedEffect(selectedMain) { selectedSubs.clear() }
 
     Column(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-        // --- STYLIZED TIMER DISPLAY ---
+
         val totalSeconds = elapsedMs / 1000f
         val minutes = (totalSeconds / 60).toInt()
         val remainingSeconds = totalSeconds % 60
@@ -175,11 +175,11 @@ fun MainScreen(dbHelper: DatabaseHelper) {
                 color = if (isRunning) MaterialTheme.colorScheme.primary else Color.Gray
             )
             Text(
-                // Formats as 00:00.0 (Minutes:Seconds.Tenths)
+
                 text = String.format(Locale.US, "%02d:%04.1f", minutes, remainingSeconds),
                 style = MaterialTheme.typography.displayLarge,
                 fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace // Keeps numbers from "jumping"
+                fontFamily = FontFamily.Monospace
             )
         }
 
@@ -206,13 +206,12 @@ fun MainScreen(dbHelper: DatabaseHelper) {
 
         Button(
             modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-            // Enable only if we have at least 1 second and the timer is paused
+
             enabled = elapsedMs >= 1000L && !isRunning,
             onClick = {
                 val finalSubs = selectedSubs.filter { it.value }.keys.toList()
                 val subsString = if (finalSubs.isEmpty()) "unspecified" else finalSubs.joinToString(", ")
 
-                // Save as seconds (Long) to match your DB schema
                 val secondsToSave = (elapsedMs / 1000L)
                 dbHelper.insertSession(selectedMain, subsString, System.currentTimeMillis(), secondsToSave)
 
@@ -278,7 +277,7 @@ fun CategoryManagementScreen(dbHelper: DatabaseHelper) {
         LazyColumn {
             categories.forEach { (main, subs) ->
                 item {
-                    // NEW: Row for the Top-Level Category Header
+
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -290,7 +289,7 @@ fun CategoryManagementScreen(dbHelper: DatabaseHelper) {
                             color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.Bold
                         )
-                        // Delete the entire main category and all its subs
+
                         IconButton(onClick = { dbHelper.deleteMainCategory(main); refreshCounter++ }) {
                             Icon(
                                 Icons.Default.Delete,
@@ -358,7 +357,7 @@ fun IOScreen(dbHelper: DatabaseHelper, context: Context) {
 }
 @Composable
 fun MetricsScreen(dbHelper: DatabaseHelper) {
-    // 2. Immutable State Object to prevent concurrent modification crashes
+
     data class MetricsState(
         val allData: List<DatabaseHelper.SessionData>,
         val grouped: Map<String, List<DatabaseHelper.SessionData>>,
@@ -480,7 +479,6 @@ fun SimpleLineChart(sessions: List<DatabaseHelper.SessionData>, colors: Map<Stri
 
             Spacer(Modifier.width(8.dp))
 
-            // Graph Area
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 Canvas(Modifier.fillMaxSize()) {
                     val w = size.width
@@ -488,19 +486,16 @@ fun SimpleLineChart(sessions: List<DatabaseHelper.SessionData>, colors: Map<Stri
                     val slotWidth = w / 7f
                     val getX: (Int) -> Float = { i -> (i * slotWidth) + (slotWidth / 2f) }
 
-                    // Grid Lines
                     repeat(3) { i ->
                         val y = h - (i * (h / 2f))
                         drawLine(Color.LightGray.copy(0.2f), Offset(0f, y), Offset(w, y))
                     }
 
-                    // Vertical Ticks
                     last7Days.forEachIndexed { i, _ ->
                         val x = getX(i)
                         drawLine(Color.LightGray.copy(0.5f), Offset(x, h), Offset(x, h + 15f), 2f)
                     }
 
-                    // Draw Traces
                     traces.forEach { (cat, dayMap) ->
                         val path = Path()
                         val color = colors[cat] ?: Color.Gray
@@ -518,7 +513,6 @@ fun SimpleLineChart(sessions: List<DatabaseHelper.SessionData>, colors: Map<Stri
             }
         }
 
-        // X-Axis Labels
         Row(modifier = Modifier.fillMaxWidth().padding(start = 48.dp, top = 4.dp)) {
             last7Days.forEach { day ->
                 val dayDate = SimpleDateFormat("MM/dd", Locale.getDefault()).format(Date(day * dMs))
@@ -530,8 +524,6 @@ fun SimpleLineChart(sessions: List<DatabaseHelper.SessionData>, colors: Map<Stri
 
         Spacer(Modifier.height(16.dp))
 
-        // --- CRASH-PROOF SCROLLING LEGEND ---
-        // Using a standard Row with horizontalScroll instead of FlowRow
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -573,7 +565,7 @@ fun YearlyHeatmap(categoryActivity: Map<String, Set<Long>>, colors: Map<String, 
 
     Column(modifier = Modifier.padding(vertical = 12.dp)) {
         categoryActivity.forEach { (category, activeDays) ->
-            // Category Title
+
             Text(
                 text = category,
                 style = MaterialTheme.typography.labelMedium,
@@ -581,7 +573,6 @@ fun YearlyHeatmap(categoryActivity: Map<String, Set<Long>>, colors: Map<String, 
                 color = MaterialTheme.colorScheme.primary
             )
 
-            // The Scrollable Grid
             Row(
                 modifier = Modifier
                     .horizontalScroll(scrollState)
@@ -606,7 +597,6 @@ fun YearlyHeatmap(categoryActivity: Map<String, Set<Long>>, colors: Map<String, 
                 }
             }
 
-            // --- THE LEGEND ---
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -616,7 +606,6 @@ fun YearlyHeatmap(categoryActivity: Map<String, Set<Long>>, colors: Map<String, 
             ) {
                 Text("Less ", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
 
-                // Four levels of "Activity" color
                 val color = colors[category] ?: Color.Gray
                 listOf(0.15f, 0.4f, 0.7f, 1.0f).forEach { opacity ->
                     Box(
@@ -655,16 +644,15 @@ fun OverallCategorySummary(sessions: List<DatabaseHelper.SessionData>) {
 
         Spacer(Modifier.height(8.dp))
 
-        // Full width bar for overall category mastery
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(20.dp) // Thicker bar for the "Main" category
+                .height(20.dp)
                 .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
         ) {
             Box(
                 modifier = Modifier
-                    .fillMaxWidth() // Parent bar is always "full" relative to its own total
+                    .fillMaxWidth()
                     .fillMaxHeight()
                     .background(getThermalBrush(totalHours), RoundedCornerShape(10.dp))
             )
@@ -716,7 +704,7 @@ fun CumulativeSubCategoryChart(sessions: List<DatabaseHelper.SessionData>) {
     }
 }
 
-// 4. Extracted logic to keep the "Thermal" coloring consistent across all bars
+
 @Composable
 fun getThermalBrush(hours: Float): Brush {
     val targetHours = 10000f
@@ -739,7 +727,7 @@ fun getThermalBrush(hours: Float): Brush {
     }
 }
 
-// Helper function to blend colors based on progress
+
 fun lerpColor(start: Color, end: Color, fraction: Float): Color {
     return Color(
         red = start.red + (end.red - start.red) * fraction,
@@ -757,7 +745,7 @@ fun DataManagementScreen(dbHelper: DatabaseHelper) {
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // State for Editing Dialog
+
     var editingSession by remember { mutableStateOf<DatabaseHelper.SessionData?>(null) }
 
     Scaffold(
@@ -788,7 +776,7 @@ fun DataManagementScreen(dbHelper: DatabaseHelper) {
                 }
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    // Table Header
+
                     item {
                         Row(
                             Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant).padding(8.dp),
@@ -841,7 +829,6 @@ fun DataManagementScreen(dbHelper: DatabaseHelper) {
             }
         }
 
-        // --- EDIT DIALOG ---
         editingSession?.let { session ->
             var newSeconds by remember { mutableStateOf((session.duration).toString()) }
 

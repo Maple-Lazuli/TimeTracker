@@ -8,7 +8,7 @@ import android.database.sqlite.SQLiteOpenHelper
 class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, "Tracker.db", null, 1) {
 
     override fun onCreate(db: SQLiteDatabase) {
-        // Table for Sessions
+
         db.execSQL("""
             CREATE TABLE sessions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -19,10 +19,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, "Tracker.db",
             )
         """)
 
-        // Table for dynamic Categories
         db.execSQL("CREATE TABLE categories (id INTEGER PRIMARY KEY AUTOINCREMENT, main_name TEXT, sub_name TEXT)")
-
-        // Seed some initial data
         db.execSQL("INSERT INTO categories (main_name, sub_name) VALUES ('Cyber', 'DNEA'), ('Cyber', 'Offensive Ops')")
         db.execSQL("INSERT INTO categories (main_name, sub_name) VALUES ('Mathematics', 'Statistics'), ('Mathematics', 'Probability')")
     }
@@ -33,7 +30,6 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, "Tracker.db",
         onCreate(db)
     }
 
-    // Insert a new session
     fun insertSession(main: String, subs: String, start: Long, duration: Long) {
         val db = this.writableDatabase
         val values = ContentValues().apply {
@@ -46,7 +42,6 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, "Tracker.db",
         db.close()
     }
 
-    // Insert a new category
     fun insertCategory(main: String, sub: String) {
         val db = this.writableDatabase
         val values = ContentValues().apply {
@@ -82,9 +77,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, "Tracker.db",
     }
     fun deleteMainCategory(mainName: String) {
         val db = this.writableDatabase
-        // This deletes every row where the main_name matches
         db.delete("categories", "main_name = ?", arrayOf(mainName))
-        // Note: Do not close the DB here if you are calling it from a UI that refreshes immediately
     }
 
 
@@ -96,9 +89,6 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, "Tracker.db",
         val db = this.readableDatabase
         return db.rawQuery("SELECT start_time, duration_seconds, main_category, sub_categories FROM sessions", null)
     }
-    // In DatabaseHelper.kt
-
-    // Get time spent per category for a specific time range
     fun getTimeByCategory(startTime: Long): Map<String, Long> {
         val result = mutableMapOf<String, Long>()
         val db = this.readableDatabase
@@ -115,11 +105,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, "Tracker.db",
         return result
     }
 
-    // Get raw data for the line charts (Week and All Time)
     fun getRawSessions(): List<SessionData> {
         val list = mutableListOf<SessionData>()
         val db = readableDatabase
-        // We use the specific column names defined in your CREATE TABLE statement
+
         val cursor = db.rawQuery("SELECT id, start_time, duration_seconds, main_category, sub_categories FROM sessions", null)
 
         if (cursor.moveToFirst()) {
@@ -138,7 +127,6 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, "Tracker.db",
     }
     fun clearAllSessions() {
         writableDatabase.delete("sessions", null, null)
-        // Optional: Reset the autoincrement counter so IDs start at 1 again
         writableDatabase.execSQL("DELETE FROM sqlite_sequence WHERE name='sessions'")
     }
 
@@ -149,11 +137,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, "Tracker.db",
     fun updateSessionDuration(id: Int, newSeconds: Long) {
         val db = this.writableDatabase
         val values = ContentValues().apply {
-            // Corrected: use "duration_seconds" to match your table schema
             put("duration_seconds", newSeconds)
         }
         db.update("sessions", values, "id = ?", arrayOf(id.toString()))
-        // Note: Don't call db.close() here if you're using it in a rapid refresh cycle
     }
 
     data class SessionData(
