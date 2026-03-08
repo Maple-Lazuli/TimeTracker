@@ -80,6 +80,13 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, "Tracker.db",
         db.delete("categories", "main_name = ? AND sub_name = ?", arrayOf(main, sub))
         db.close()
     }
+    fun deleteMainCategory(mainName: String) {
+        val db = this.writableDatabase
+        // This deletes every row where the main_name matches
+        db.delete("categories", "main_name = ?", arrayOf(mainName))
+        // Note: Do not close the DB here if you are calling it from a UI that refreshes immediately
+    }
+
 
     fun getDatabasePath(context: Context): java.io.File {
         return context.getDatabasePath("Tracker.db")
@@ -109,21 +116,51 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, "Tracker.db",
     }
 
     // Get raw data for the line charts (Week and All Time)
-    fun getRawSessions(startTime: Long = 0): List<SessionData> {
+    fun getRawSessions(): List<SessionData> {
         val list = mutableListOf<SessionData>()
-        val db = this.readableDatabase
-        val cursor = db.rawQuery(
-            "SELECT start_time, duration_seconds, main_category, sub_categories FROM sessions WHERE start_time >= ? ORDER BY start_time ASC",
-            arrayOf(startTime.toString())
-        )
+        val db = readableDatabase
+        // We use the specific column names defined in your CREATE TABLE statement
+        val cursor = db.rawQuery("SELECT id, start_time, duration_seconds, main_category, sub_categories FROM sessions", null)
+
         if (cursor.moveToFirst()) {
             do {
-                list.add(SessionData(cursor.getLong(0), cursor.getLong(1), cursor.getString(2), cursor.getString(3)))
+                val id = cursor.getInt(0)
+                val timestamp = cursor.getLong(1) // matches start_time
+                val duration = cursor.getLong(2)  // matches duration_seconds
+                val main = cursor.getString(3)    // matches main_category
+                val subs = cursor.getString(4)    // matches sub_categories
+
+                list.add(SessionData(id, timestamp, duration, main, subs))
             } while (cursor.moveToNext())
         }
         cursor.close()
         return list
     }
+    fun clearAllSessions() {
+        writableDatabase.delete("sessions", null, null)
+        // Optional: Reset the autoincrement counter so IDs start at 1 again
+        writableDatabase.execSQL("DELETE FROM sqlite_sequence WHERE name='sessions'")
+    }
 
-    data class SessionData(val timestamp: Long, val duration: Long, val main: String, val subs: String)
+    fun deleteSession(id: Int) {
+        writableDatabase.delete("sessions", "id = ?", arrayOf(id.toString()))
+    }
+
+    fun updateSessionDuration(id: Int, newSeconds: Long) {
+        val db = this.writableDatabase
+        val values = ContentValues().apply {
+            // Corrected: use "duration_seconds" to match your table schema
+            put("duration_seconds", newSeconds)
+        }
+        db.update("sessions", values, "id = ?", arrayOf(id.toString()))
+        // Note: Don't call db.close() here if you're using it in a rapid refresh cycle
+    }
+
+    data class SessionData(
+        val id: Int,
+        val timestamp: Long,
+        val duration: Long,
+        val main: String,
+        val subs: String
+    )
 }

@@ -103,10 +103,14 @@ fun MainNavigation(dbHelper: DatabaseHelper) {
                     navController.navigate("io") { launchSingleTop = true }
                     scope.launch { drawerState.close() }
                 })
-                NavigationDrawerItem(label = { Text("Simulate Data") }, selected = false, onClick = {
-                    navController.navigate("simulate") { launchSingleTop = true }
-                    scope.launch { drawerState.close() }
-                })
+                NavigationDrawerItem(
+                    label = { Text("Data Management") },
+                    selected = false,
+                    onClick = {
+                        navController.navigate("management") { launchSingleTop = true }
+                        scope.launch { drawerState.close() }
+                    }
+                )
             }
         }
     ) {
@@ -127,7 +131,7 @@ fun MainNavigation(dbHelper: DatabaseHelper) {
                 composable("categories") { CategoryManagementScreen(dbHelper) }
                 composable("io") { IOScreen(dbHelper, LocalContext.current) }
                 composable("metrics") { MetricsScreen(dbHelper) }
-                composable("simulate") { SimulationScreen(dbHelper) }
+                composable("management") { DataManagementScreen(dbHelper) }
             }
         }
     }
@@ -257,23 +261,62 @@ fun CategoryManagementScreen(dbHelper: DatabaseHelper) {
         TextField(value = mainInput, onValueChange = { mainInput = it }, label = { Text("Main") }, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(8.dp))
         TextField(value = subInput, onValueChange = { subInput = it }, label = { Text("Sub") }, modifier = Modifier.fillMaxWidth())
-        Button(onClick = { if (mainInput.isNotBlank() && subInput.isNotBlank()) { dbHelper.insertCategory(mainInput, subInput); mainInput = ""; subInput = ""; refreshCounter++ } }, modifier = Modifier.padding(vertical = 16.dp).fillMaxWidth()) { Text("Add Category") }
+
+        Button(
+            onClick = {
+                if (mainInput.isNotBlank() && subInput.isNotBlank()) {
+                    dbHelper.insertCategory(mainInput, subInput)
+                    mainInput = ""; subInput = ""; refreshCounter++
+                }
+            },
+            modifier = Modifier.padding(vertical = 16.dp).fillMaxWidth()
+        ) { Text("Add Category") }
+
         HorizontalDivider()
         Text("Existing Categories", modifier = Modifier.padding(vertical = 8.dp), style = MaterialTheme.typography.titleMedium)
+
         LazyColumn {
             categories.forEach { (main, subs) ->
-                item { Text(text = main, modifier = Modifier.padding(top = 12.dp), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) }
+                item {
+                    // NEW: Row for the Top-Level Category Header
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = main,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                        // Delete the entire main category and all its subs
+                        IconButton(onClick = { dbHelper.deleteMainCategory(main); refreshCounter++ }) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "Delete Main Category",
+                                tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
                 items(subs) { sub ->
-                    Row(modifier = Modifier.fillMaxWidth().padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(sub)
-                        IconButton(onClick = { dbHelper.deleteCategory(main, sub); refreshCounter++ }) { Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error) }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(start = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(sub, style = MaterialTheme.typography.bodyMedium)
+                        IconButton(onClick = { dbHelper.deleteCategory(main, sub); refreshCounter++ }) {
+                            Icon(Icons.Default.Delete, "Delete Sub", tint = MaterialTheme.colorScheme.error)
+                        }
                     }
                 }
             }
         }
     }
 }
-
 @Composable
 fun IOScreen(dbHelper: DatabaseHelper, context: Context) {
     val scope = rememberCoroutineScope()
@@ -706,42 +749,129 @@ fun lerpColor(start: Color, end: Color, fraction: Float): Color {
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SimulationScreen(dbHelper: DatabaseHelper) {
+fun DataManagementScreen(dbHelper: DatabaseHelper) {
+    var refreshCounter by remember { mutableIntStateOf(0) }
+    val sessions = remember(refreshCounter) { dbHelper.getRawSessions().sortedByDescending { it.timestamp } }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
-    val categories = remember { dbHelper.getCategories() }
 
-    Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }) { padding ->
-        Column(modifier = Modifier.padding(padding).padding(24.dp).fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            Text("Simulation Tool", style = MaterialTheme.typography.headlineMedium)
-            Text("Generates 60 sessions over 30 days.", modifier = Modifier.padding(vertical = 16.dp), textAlign = TextAlign.Center)
-            Button(
-                modifier = Modifier.fillMaxWidth(),
-                enabled = categories.isNotEmpty(),
+    // State for Editing Dialog
+    var editingSession by remember { mutableStateOf<DatabaseHelper.SessionData?>(null) }
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
                 onClick = {
-                    scope.launch {
-                        val dayInMs = 24 * 60 * 60 * 1000L
-                        val now = System.currentTimeMillis()
-                        repeat(60) {
-                            val timestamp = now - ((0..30).random() * dayInMs) - (0..dayInMs).random()
-                            val mainCat = categories.keys.random()
-                            val subCat = categories[mainCat]?.random() ?: "General"
-                            dbHelper.insertSession(mainCat, subCat, timestamp, (900..10800).random().toLong())
-                        }
-                        snackbarHostState.showSnackbar("Simulated 60 sessions!")
-                    }
-                }
-            ) { Text("Generate 30 Days of Activity") }
+                    dbHelper.clearAllSessions()
+                    refreshCounter++
+                    scope.launch { snackbarHostState.showSnackbar("All sessions cleared.") }
+                },
+                containerColor = MaterialTheme.colorScheme.errorContainer,
+                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                icon = { Icon(Icons.Default.Delete, null) },
+                text = { Text("Reset All Data") }
+            )
+        }
+    ) { padding ->
+        Column(modifier = Modifier.padding(padding).padding(16.dp).fillMaxSize()) {
+            Text("Session History", style = MaterialTheme.typography.headlineMedium)
+            Text("${sessions.size} total entries", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
 
             Spacer(Modifier.height(16.dp))
 
-            TextButton(onClick = {
-                dbHelper.writableDatabase.execSQL("DELETE FROM sessions")
-                scope.launch { snackbarHostState.showSnackbar("All sessions cleared.") }
-            }) {
-                Text("Clear All Session Data", color = MaterialTheme.colorScheme.error)
+            if (sessions.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("No data recorded yet.", color = Color.Gray)
+                }
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    // Table Header
+                    item {
+                        Row(
+                            Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant).padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Date/Category", Modifier.weight(1.5f), style = MaterialTheme.typography.labelMedium)
+                            Text("Time", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center)
+                            Text("Action", Modifier.weight(0.5f), style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.End)
+                        }
+                    }
+
+                    items(sessions) { session ->
+                        val dateStr = SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()).format(Date(session.timestamp))
+
+                        Card(
+                            onClick = { editingSession = session },
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                        ) {
+                            Row(
+                                Modifier.padding(8.dp).fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1.5f)) {
+                                    Text(dateStr, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                                    Text(session.main, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                                    Text(session.subs, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                                }
+
+                                Text(
+                                    text = String.format(Locale.US, "%.2fh", session.duration / 3600f),
+                                    modifier = Modifier.weight(1f),
+                                    textAlign = TextAlign.Center,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+
+                                IconButton(
+                                    onClick = {
+                                        dbHelper.deleteSession(session.id)
+                                        refreshCounter++
+                                    },
+                                    modifier = Modifier.weight(0.5f)
+                                ) {
+                                    Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error.copy(alpha = 0.6f))
+                                }
+                            }
+                        }
+                    }
+                }
             }
+        }
+
+        // --- EDIT DIALOG ---
+        editingSession?.let { session ->
+            var newSeconds by remember { mutableStateOf((session.duration).toString()) }
+
+            AlertDialog(
+                onDismissRequest = { editingSession = null },
+                title = { Text("Edit Session Time") },
+                text = {
+                    Column {
+                        Text("${session.main} - ${session.subs}", style = MaterialTheme.typography.labelMedium)
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = newSeconds,
+                            onValueChange = { newSeconds = it.filter { char -> char.isDigit() } },
+                            label = { Text("Duration (seconds)") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val seconds = newSeconds.toLongOrNull() ?: 0L
+                        dbHelper.updateSessionDuration(session.id, seconds)
+                        refreshCounter++
+                        editingSession = null
+                    }) { Text("Save") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { editingSession = null }) { Text("Cancel") }
+                }
+            )
         }
     }
 }
