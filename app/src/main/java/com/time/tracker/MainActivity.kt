@@ -23,6 +23,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -322,9 +323,20 @@ fun MetricsScreen(dbHelper: DatabaseHelper) {
             item { Spacer(Modifier.height(32.dp)) }
 
             item { Text("All-Time Cumulative Trends", style = MaterialTheme.typography.headlineSmall) }
+
             s.grouped.forEach { (main, sessions) ->
                 item(key = main) {
-                    Text(main, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
+                    Spacer(Modifier.height(24.dp))
+
+                    // 1. Title of the Main Category
+                    Text(main, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+
+                    // 2. The Overall Category Bar
+                    OverallCategorySummary(sessions)
+
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp).alpha(0.3f))
+
+                    // 3. The existing subcategory breakdown
                     CumulativeSubCategoryChart(sessions)
                 }
             }
@@ -523,44 +535,55 @@ fun YearlyHeatmap(categoryActivity: Map<String, Set<Long>>, colors: Map<String, 
 
 
 @Composable
+fun OverallCategorySummary(sessions: List<DatabaseHelper.SessionData>) {
+    val totalHours = sessions.sumOf { it.duration.toDouble() }.toFloat() / 3600f
+
+    Column(modifier = Modifier.padding(vertical = 12.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Bottom
+        ) {
+            Text("OVERALL PROGRESS", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Text(
+                text = String.format(Locale.US, "%.1f hrs", totalHours),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Black,
+                color = if (totalHours > 10000f) Color(0xFF1E90FF) else MaterialTheme.colorScheme.onSurface
+            )
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        // Full width bar for overall category mastery
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(20.dp) // Thicker bar for the "Main" category
+                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth() // Parent bar is always "full" relative to its own total
+                    .fillMaxHeight()
+                    .background(getThermalBrush(totalHours), RoundedCornerShape(10.dp))
+            )
+        }
+    }
+}
+
+@Composable
 fun CumulativeSubCategoryChart(sessions: List<DatabaseHelper.SessionData>) {
     val subTotals = sessions.groupBy { it.subs }
-        .mapValues { it.value.sumOf { s -> s.duration } / 3600f } // Divide by 3600 for seconds
+        .mapValues { it.value.sumOf { s -> s.duration.toDouble() }.toFloat() / 3600f }
         .toList()
         .sortedByDescending { it.second }
 
-    val totalMain = subTotals.sumOf { it.second.toDouble() }.toFloat()
+    val maxSubHours = subTotals.sumOf { it.second.toDouble() }.toFloat()
 
     Column(modifier = Modifier.padding(vertical = 8.dp)) {
         subTotals.forEach { (sub, hours) ->
-            val progress = if (totalMain > 0) (hours / totalMain).coerceIn(0f, 1f) else 0f
-
-            // --- THE THERMAL LOGIC ---
-            val barBrush = remember(hours) {
-                val targetHours = 10000f
-
-                if (hours <= targetHours) {
-                    // HEAT SCALE: Red -> Orange -> Yellow
-                    // As hours increase, the "hotter" (more yellow) the gradient becomes
-                    val heatIntensity = (hours / targetHours).coerceIn(0f, 1f)
-                    Brush.horizontalGradient(
-                        colors = listOf(
-                            Color(0xFF8B0000), // Base: Deep Red
-                            lerpColor(Color(0xFFFF4500), Color(0xFFFFD700), heatIntensity) // Transition to Gold
-                        )
-                    )
-                } else {
-                    // BLUE FLAME: Yellow -> Cyan -> Electric Blue
-                    // For mastery beyond 10k hours
-                    val blueIntensity = ((hours - targetHours) / targetHours).coerceIn(0f, 1f)
-                    Brush.horizontalGradient(
-                        colors = listOf(
-                            Color(0xFFFFD700), // Base: The 10k Gold
-                            lerpColor(Color(0xFF00FFFF), Color(0xFF1E90FF), blueIntensity) // Transition to Blue
-                        )
-                    )
-                }
-            }
+            val progress = if (maxSubHours > 0) (hours / maxSubHours).coerceIn(0f, 1f) else 0f
 
             Column(Modifier.padding(vertical = 6.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -569,7 +592,6 @@ fun CumulativeSubCategoryChart(sessions: List<DatabaseHelper.SessionData>) {
                         text = String.format(Locale.US, "%.1fh", hours),
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
-                        // Color the text to match the intensity
                         color = if (hours > 10000f) Color(0xFF1E90FF) else MaterialTheme.colorScheme.onSurface
                     )
                 }
@@ -586,11 +608,34 @@ fun CumulativeSubCategoryChart(sessions: List<DatabaseHelper.SessionData>) {
                         modifier = Modifier
                             .fillMaxWidth(progress)
                             .fillMaxHeight()
-                            .background(barBrush, RoundedCornerShape(5.dp))
+                            .background(getThermalBrush(hours), RoundedCornerShape(5.dp))
                     )
                 }
             }
         }
+    }
+}
+
+// 4. Extracted logic to keep the "Thermal" coloring consistent across all bars
+@Composable
+fun getThermalBrush(hours: Float): Brush {
+    val targetHours = 10000f
+    return if (hours <= targetHours) {
+        val heatIntensity = (hours / targetHours).coerceIn(0f, 1f)
+        Brush.horizontalGradient(
+            colors = listOf(
+                Color(0xFF8B0000),
+                lerpColor(Color(0xFFFF4500), Color(0xFFFFD700), heatIntensity)
+            )
+        )
+    } else {
+        val blueIntensity = ((hours - targetHours) / targetHours).coerceIn(0f, 1f)
+        Brush.horizontalGradient(
+            colors = listOf(
+                Color(0xFFFFD700),
+                lerpColor(Color(0xFF00FFFF), Color(0xFF1E90FF), blueIntensity)
+            )
+        )
     }
 }
 
