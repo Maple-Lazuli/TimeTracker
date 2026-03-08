@@ -449,25 +449,56 @@ fun SimpleLineChart(sessions: List<DatabaseHelper.SessionData>, colors: Map<Stri
 fun YearlyHeatmap(categoryActivity: Map<String, Set<Long>>, colors: Map<String, Color>) {
     val dayInMs = 24 * 60 * 60 * 1000L
     val now = System.currentTimeMillis()
+
+    // Total history (e.g., 140 days).
+    // We keep them in chronological order so the rightmost column is "Today"
     val dayGrid = (0 until 140).map { i -> (now / dayInMs) - i }.reversed()
 
-    Column(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 8.dp)) {
+    // Chunk into columns of 4 (Top to Bottom)
+    val columns = dayGrid.chunked(4)
+
+    // Start scroll at the far right (most recent activity)
+    val scrollState = rememberScrollState(initial = Int.MAX_VALUE)
+
+    Column(modifier = Modifier.padding(vertical = 12.dp)) {
         categoryActivity.forEach { (category, activeDays) ->
-            Text(category, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 8.dp))
-            Row(Modifier.padding(vertical = 2.dp)) {
-                dayGrid.forEach { dayTimestamp ->
-                    Box(
-                        Modifier.size(12.dp).padding(1.dp).background(
-                            if (activeDays.contains(dayTimestamp)) colors[category] ?: Color.Gray
-                            else Color.Gray.copy(alpha = 0.1f),
-                            shape = RoundedCornerShape(2.dp)
-                        )
-                    )
+            Text(
+                text = category,
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.padding(bottom = 6.dp),
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            // This Row scrolls horizontally
+            Row(
+                modifier = Modifier
+                    .horizontalScroll(scrollState)
+                    .padding(bottom = 16.dp)
+            ) {
+                // Each "Column" contains 4 boxes stacked vertically
+                columns.forEach { columnDays ->
+                    Column {
+                        columnDays.forEach { dayTimestamp ->
+                            val isActive = activeDays.contains(dayTimestamp)
+                            Box(
+                                Modifier
+                                    .size(16.dp) // Box size
+                                    .padding(2.dp) // Gap between boxes
+                                    .background(
+                                        if (isActive) colors[category] ?: Color.Gray
+                                        else Color.Gray.copy(alpha = 0.15f),
+                                        shape = RoundedCornerShape(2.dp)
+                                    )
+                            )
+                        }
+                    }
                 }
             }
         }
     }
 }
+
+
 @Composable
 fun CumulativeSubCategoryChart(sessions: List<DatabaseHelper.SessionData>) {
     val subTotals = sessions.groupBy { it.subs }.mapValues { it.value.sumOf { s -> s.duration } / 3600f }.toList().sortedByDescending { it.second }
