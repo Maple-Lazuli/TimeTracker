@@ -5,8 +5,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -20,7 +20,14 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -28,6 +35,18 @@ import androidx.navigation.compose.rememberNavController
 import com.time.tracker.ui.theme.TrackerTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+// Helper for consistent chart colors
+object CategoryColors {
+    private val palette = listOf(0xFF6200EE, 0xFF03DAC5, 0xFF018786, 0xFFB00020, 0xFFFFAB00)
+    private val colorMap = mutableMapOf<String, Color>()
+
+    fun getColor(category: String): Color {
+        return colorMap.getOrPut(category) {
+            Color(palette[colorMap.size % palette.size])
+        }
+    }
+}
 
 class MainActivity : ComponentActivity() {
     private val dbHelper by lazy { DatabaseHelper(this) }
@@ -56,38 +75,26 @@ fun MainNavigation(dbHelper: DatabaseHelper) {
             ModalDrawerSheet {
                 Spacer(Modifier.height(12.dp))
                 Text("Time Tracker", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleLarge)
-                NavigationDrawerItem(
-                    label = { Text("Record Time") },
-                    selected = false,
-                    onClick = {
-                        navController.navigate("record") { launchSingleTop = true }
-                        scope.launch { drawerState.close() }
-                    }
-                )
-                NavigationDrawerItem(
-                    label = { Text("Manage Categories") },
-                    selected = false,
-                    onClick = {
-                        navController.navigate("categories") { launchSingleTop = true }
-                        scope.launch { drawerState.close() }
-                    }
-                )
-                NavigationDrawerItem(
-                    label = { Text("Import / Export") },
-                    selected = false,
-                    onClick = {
-                        navController.navigate("io") { launchSingleTop = true }
-                        scope.launch { drawerState.close() }
-                    }
-                )
-                NavigationDrawerItem(
-                    label = { Text("Metrics") },
-                    selected = false,
-                    onClick = {
-                        navController.navigate("metrics") { launchSingleTop = true }
-                        scope.launch { drawerState.close() }
-                    }
-                )
+                NavigationDrawerItem(label = { Text("Record Time") }, selected = false, onClick = {
+                    navController.navigate("record") { launchSingleTop = true }
+                    scope.launch { drawerState.close() }
+                })
+                NavigationDrawerItem(label = { Text("Manage Categories") }, selected = false, onClick = {
+                    navController.navigate("categories") { launchSingleTop = true }
+                    scope.launch { drawerState.close() }
+                })
+                NavigationDrawerItem(label = { Text("Metrics") }, selected = false, onClick = {
+                    navController.navigate("metrics") { launchSingleTop = true }
+                    scope.launch { drawerState.close() }
+                })
+                NavigationDrawerItem(label = { Text("Import / Export") }, selected = false, onClick = {
+                    navController.navigate("io") { launchSingleTop = true }
+                    scope.launch { drawerState.close() }
+                })
+                NavigationDrawerItem(label = { Text("Simulate Data") }, selected = false, onClick = {
+                    navController.navigate("simulate") { launchSingleTop = true }
+                    scope.launch { drawerState.close() }
+                })
             }
         }
     ) {
@@ -108,6 +115,7 @@ fun MainNavigation(dbHelper: DatabaseHelper) {
                 composable("categories") { CategoryManagementScreen(dbHelper) }
                 composable("io") { IOScreen(dbHelper, LocalContext.current) }
                 composable("metrics") { MetricsScreen(dbHelper) }
+                composable("simulate") { SimulationScreen(dbHelper) }
             }
         }
     }
@@ -137,7 +145,7 @@ fun MainScreen(dbHelper: DatabaseHelper) {
         HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp))
 
         if (categoryMap.isEmpty()) {
-            Text("No categories found. Go to 'Manage Categories' to add some!")
+            Text("No categories found. Add some in 'Manage Categories'!")
         } else {
             CategorySelector(selectedMain, { selectedMain = it }, selectedSubs, categoryMap)
         }
@@ -191,9 +199,9 @@ fun CategoryManagementScreen(dbHelper: DatabaseHelper) {
 
     Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
         Text("Add New Category", style = MaterialTheme.typography.titleMedium)
-        TextField(value = mainInput, onValueChange = { mainInput = it }, label = { Text("Main (e.g. Cyber)") }, modifier = Modifier.fillMaxWidth())
+        TextField(value = mainInput, onValueChange = { mainInput = it }, label = { Text("Main") }, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(8.dp))
-        TextField(value = subInput, onValueChange = { subInput = it }, label = { Text("Sub (e.g. DNEA)") }, modifier = Modifier.fillMaxWidth())
+        TextField(value = subInput, onValueChange = { subInput = it }, label = { Text("Sub") }, modifier = Modifier.fillMaxWidth())
         Button(onClick = { if (mainInput.isNotBlank() && subInput.isNotBlank()) { dbHelper.insertCategory(mainInput, subInput); mainInput = ""; subInput = ""; refreshCounter++ } }, modifier = Modifier.padding(vertical = 16.dp).fillMaxWidth()) { Text("Add Category") }
         HorizontalDivider()
         Text("Existing Categories", modifier = Modifier.padding(vertical = 8.dp), style = MaterialTheme.typography.titleMedium)
@@ -241,20 +249,10 @@ fun IOScreen(dbHelper: DatabaseHelper, context: Context) {
         }
     }
 
-    val importDbLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let {
-            dbHelper.close()
-            val dbFile = dbHelper.getDatabasePath(context)
-            context.contentResolver.openInputStream(it)?.use { input -> dbFile.outputStream().use { output -> input.copyTo(output) } }
-            scope.launch { snackbarHostState.showSnackbar("Database Imported! Restart App.") }
-        }
-    }
-
     Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }) { padding ->
         Column(modifier = Modifier.padding(padding).padding(16.dp).fillMaxSize()) {
             Text("Data Management", style = MaterialTheme.typography.headlineSmall)
             OutlinedButton(onClick = { exportDbLauncher.launch("tracker_backup.db") }, modifier = Modifier.fillMaxWidth()) { Text("Export SQLite (.db)") }
-            OutlinedButton(onClick = { importDbLauncher.launch(arrayOf("application/octet-stream", "application/x-sqlite3")) }, modifier = Modifier.fillMaxWidth()) { Text("Import SQLite (.db)") }
             HorizontalDivider(Modifier.padding(vertical = 24.dp))
             Button(onClick = { exportCsvLauncher.launch("time_logs.csv") }, modifier = Modifier.fillMaxWidth()) { Text("Export to CSV") }
         }
@@ -275,10 +273,7 @@ fun MetricsScreen(dbHelper: DatabaseHelper) {
         item { Text("Daily Proportions", style = MaterialTheme.typography.headlineSmall) }
         item { SimplePieChart(dayData) }
         item { Spacer(Modifier.height(32.dp)) }
-        item { Text("Weekly Proportions", style = MaterialTheme.typography.headlineSmall) }
-        item { SimplePieChart(weekData) }
-        item { Spacer(Modifier.height(32.dp)) }
-        item { Text("Weekly Activity (Last 7 Days)", style = MaterialTheme.typography.headlineSmall) }
+        item { Text("Weekly Activity (Hrs/Day)", style = MaterialTheme.typography.headlineSmall) }
         item { SimpleLineChart(allTimeData.filter { it.timestamp >= weekStart }) }
         item { Spacer(Modifier.height(32.dp)) }
         item { Text("All-Time Cumulative Trends", style = MaterialTheme.typography.headlineSmall) }
@@ -293,24 +288,23 @@ fun MetricsScreen(dbHelper: DatabaseHelper) {
 
 @Composable
 fun SimplePieChart(data: Map<String, Long>) {
-    val colors = listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary, MaterialTheme.colorScheme.tertiary, MaterialTheme.colorScheme.error)
     val total = data.values.sum().toFloat()
     if (total == 0f) { Text("No data for this period", modifier = Modifier.padding(16.dp)); return }
 
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.height(200.dp)) {
         Canvas(modifier = Modifier.size(150.dp)) {
             var startAngle = 0f
-            data.values.forEachIndexed { index, value ->
-                val sweepAngle = (value / total) * 360f
-                drawArc(colors[index % colors.size], startAngle, sweepAngle, true)
+            data.keys.forEachIndexed { index, category ->
+                val sweepAngle = (data[category]!! / total) * 360f
+                drawArc(CategoryColors.getColor(category), startAngle, sweepAngle, true)
                 startAngle += sweepAngle
             }
         }
         Column(modifier = Modifier.padding(start = 16.dp)) {
-            data.keys.forEachIndexed { index, label ->
+            data.keys.forEach { category ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(10.dp).background(colors[index % colors.size]))
-                    Text(" $label", style = MaterialTheme.typography.bodySmall)
+                    Box(Modifier.size(10.dp).background(CategoryColors.getColor(category)))
+                    Text(" $category", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -319,14 +313,108 @@ fun SimplePieChart(data: Map<String, Long>) {
 
 @Composable
 fun SimpleLineChart(sessions: List<DatabaseHelper.SessionData>) {
-    Box(Modifier.fillMaxWidth().height(150.dp).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
-        Text("Linear Trend: ${sessions.size} sessions recorded")
+    val dayInMs = 24 * 60 * 60 * 1000L
+    val now = System.currentTimeMillis()
+    val last7Days = (0..6).map { i -> (now / dayInMs) - i }.reversed()
+
+    val traces = sessions.groupBy { it.main }.mapValues { (_, categorySessions) ->
+        categorySessions.groupBy { it.timestamp / dayInMs }
+            .mapValues { (_, daySessions) -> daySessions.sumOf { it.duration } / 3600f }
+    }
+
+    Column {
+        Canvas(modifier = Modifier.fillMaxWidth().height(180.dp).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)).padding(16.dp)) {
+            val width = size.width
+            val height = size.height
+            val spacing = if (last7Days.size > 1) width / (last7Days.size - 1) else width
+            val maxHours = traces.values.flatMap { it.values }.maxOrNull()?.coerceAtLeast(1f) ?: 5f
+
+            traces.forEach { (category, dayMap) ->
+                val path = Path()
+                val color = CategoryColors.getColor(category)
+
+                last7Days.forEachIndexed { index, day ->
+                    val hours = dayMap[day] ?: 0f
+                    val x = index * spacing
+                    val y = height - (hours / maxHours * height)
+
+                    if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                    drawCircle(color, radius = 6f, center = Offset(x, y))
+                }
+                drawPath(path = path, color = color, style = Stroke(width = 4.dp.toPx()))
+            }
+        }
+        Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.Center) {
+            traces.keys.forEach { category ->
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 8.dp)) {
+                    Box(Modifier.size(8.dp).background(CategoryColors.getColor(category)))
+                    Text(" $category", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
     }
 }
 
 @Composable
 fun CumulativeSubCategoryChart(sessions: List<DatabaseHelper.SessionData>) {
-    Box(Modifier.fillMaxWidth().height(100.dp).padding(vertical = 4.dp).background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f))) {
-        Text("Cumulative Data: ${sessions.sumOf { it.duration }}s total", modifier = Modifier.align(Alignment.Center))
+    val subTotals = sessions.groupBy { it.subs }.mapValues { it.value.sumOf { s -> s.duration } / 3600f }.toList().sortedByDescending { it.second }
+
+    Column(modifier = Modifier.padding(vertical = 8.dp)) {
+        subTotals.forEach { (sub, hours) ->
+            Column(Modifier.padding(vertical = 4.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(sub, style = MaterialTheme.typography.bodySmall)
+                    Text("${String.format("%.1f", hours)}h", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                }
+                LinearProgressIndicator(
+                    progress = {
+                        val totalMain = subTotals.sumOf { it.second.toDouble() }.toFloat()
+                        if (totalMain > 0) hours / totalMain else 0f
+                    },
+                    modifier = Modifier.fillMaxWidth().height(8.dp),
+                    strokeCap = StrokeCap.Round
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun SimulationScreen(dbHelper: DatabaseHelper) {
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val categories = remember { dbHelper.getCategories() }
+
+    Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }) { padding ->
+        Column(modifier = Modifier.padding(padding).padding(24.dp).fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            Text("Simulation Tool", style = MaterialTheme.typography.headlineMedium)
+            Text("Generates 60 sessions over 30 days.", modifier = Modifier.padding(vertical = 16.dp), textAlign = TextAlign.Center)
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                enabled = categories.isNotEmpty(),
+                onClick = {
+                    scope.launch {
+                        val dayInMs = 24 * 60 * 60 * 1000L
+                        val now = System.currentTimeMillis()
+                        repeat(60) {
+                            val timestamp = now - ((0..30).random() * dayInMs) - (0..dayInMs).random()
+                            val mainCat = categories.keys.random()
+                            val subCat = categories[mainCat]?.random() ?: "General"
+                            dbHelper.insertSession(mainCat, subCat, timestamp, (900..10800).random().toLong())
+                        }
+                        snackbarHostState.showSnackbar("Simulated 60 sessions!")
+                    }
+                }
+            ) { Text("Generate 30 Days of Activity") }
+
+            Spacer(Modifier.height(16.dp))
+
+            TextButton(onClick = {
+                dbHelper.writableDatabase.execSQL("DELETE FROM sessions")
+                scope.launch { snackbarHostState.showSnackbar("All sessions cleared.") }
+            }) {
+                Text("Clear All Session Data", color = MaterialTheme.colorScheme.error)
+            }
+        }
     }
 }
