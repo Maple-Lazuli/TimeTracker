@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -134,26 +135,62 @@ fun MainNavigation(dbHelper: DatabaseHelper) {
 
 @Composable
 fun MainScreen(dbHelper: DatabaseHelper) {
-    var seconds by remember { mutableIntStateOf(0) }
+    // We switch to Long to track milliseconds for better precision
+    var elapsedMs by remember { mutableLongStateOf(0L) }
     var isRunning by remember { mutableStateOf(false) }
+    var startTime by remember { mutableLongStateOf(0L) }
+
     val categoryMap = remember { dbHelper.getCategories() }
     var selectedMain by remember { mutableStateOf(categoryMap.keys.firstOrNull() ?: "") }
     val selectedSubs = remember { mutableStateMapOf<String, Boolean>() }
 
+    // High-precision Timer Logic
     LaunchedEffect(isRunning) {
-        while (isRunning) {
-            delay(1000L)
-            seconds++
+        if (isRunning) {
+            // Adjust start time to account for already elapsed time (resuming)
+            startTime = System.currentTimeMillis() - elapsedMs
+            while (isRunning) {
+                elapsedMs = System.currentTimeMillis() - startTime
+                delay(100L) // Update every 100ms
+            }
         }
     }
 
     LaunchedEffect(selectedMain) { selectedSubs.clear() }
 
     Column(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("Time Spent: $seconds seconds", style = MaterialTheme.typography.headlineMedium)
-        Spacer(Modifier.height(16.dp))
-        Button(onClick = { isRunning = !isRunning }) { Text(if (isRunning) "Pause" else "Start") }
-        HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp))
+        // --- STYLIZED TIMER DISPLAY ---
+        val totalSeconds = elapsedMs / 1000f
+        val minutes = (totalSeconds / 60).toInt()
+        val remainingSeconds = totalSeconds % 60
+
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = "SESSION ACTIVE",
+                style = MaterialTheme.typography.labelLarge,
+                color = if (isRunning) MaterialTheme.colorScheme.primary else Color.Gray
+            )
+            Text(
+                // Formats as 00:00.0 (Minutes:Seconds.Tenths)
+                text = String.format(Locale.US, "%02d:%04.1f", minutes, remainingSeconds),
+                style = MaterialTheme.typography.displayLarge,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace // Keeps numbers from "jumping"
+            )
+        }
+
+        Spacer(Modifier.height(24.dp))
+
+        Button(
+            onClick = { isRunning = !isRunning },
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (isRunning) Color(0xFFB00020) else MaterialTheme.colorScheme.primary
+            )
+        ) {
+            Text(if (isRunning) "Stop / Pause" else "Start Session")
+        }
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp).alpha(0.5f))
 
         if (categoryMap.isEmpty()) {
             Text("No categories found. Add some in 'Manage Categories'!")
@@ -162,14 +199,21 @@ fun MainScreen(dbHelper: DatabaseHelper) {
         }
 
         Spacer(modifier = Modifier.weight(1f))
+
         Button(
             modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-            enabled = seconds > 0 && !isRunning,
+            // Enable only if we have at least 1 second and the timer is paused
+            enabled = elapsedMs >= 1000L && !isRunning,
             onClick = {
                 val finalSubs = selectedSubs.filter { it.value }.keys.toList()
                 val subsString = if (finalSubs.isEmpty()) "unspecified" else finalSubs.joinToString(", ")
-                dbHelper.insertSession(selectedMain, subsString, System.currentTimeMillis(), seconds.toLong())
-                seconds = 0
+
+                // Save as seconds (Long) to match your DB schema
+                val secondsToSave = (elapsedMs / 1000L)
+                dbHelper.insertSession(selectedMain, subsString, System.currentTimeMillis(), secondsToSave)
+
+                // Reset
+                elapsedMs = 0L
                 selectedSubs.clear()
             }
         ) { Text("Save Session") }
