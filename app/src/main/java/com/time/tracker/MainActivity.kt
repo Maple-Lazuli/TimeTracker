@@ -449,19 +449,13 @@ fun SimpleLineChart(sessions: List<DatabaseHelper.SessionData>, colors: Map<Stri
 fun YearlyHeatmap(categoryActivity: Map<String, Set<Long>>, colors: Map<String, Color>) {
     val dayInMs = 24 * 60 * 60 * 1000L
     val now = System.currentTimeMillis()
-
-    // Total history (e.g., 140 days).
-    // We keep them in chronological order so the rightmost column is "Today"
     val dayGrid = (0 until 140).map { i -> (now / dayInMs) - i }.reversed()
-
-    // Chunk into columns of 4 (Top to Bottom)
     val columns = dayGrid.chunked(4)
-
-    // Start scroll at the far right (most recent activity)
     val scrollState = rememberScrollState(initial = Int.MAX_VALUE)
 
     Column(modifier = Modifier.padding(vertical = 12.dp)) {
         categoryActivity.forEach { (category, activeDays) ->
+            // Category Title
             Text(
                 text = category,
                 style = MaterialTheme.typography.labelMedium,
@@ -469,21 +463,20 @@ fun YearlyHeatmap(categoryActivity: Map<String, Set<Long>>, colors: Map<String, 
                 color = MaterialTheme.colorScheme.primary
             )
 
-            // This Row scrolls horizontally
+            // The Scrollable Grid
             Row(
                 modifier = Modifier
                     .horizontalScroll(scrollState)
-                    .padding(bottom = 16.dp)
+                    .padding(bottom = 4.dp)
             ) {
-                // Each "Column" contains 4 boxes stacked vertically
                 columns.forEach { columnDays ->
                     Column {
                         columnDays.forEach { dayTimestamp ->
                             val isActive = activeDays.contains(dayTimestamp)
                             Box(
                                 Modifier
-                                    .size(16.dp) // Box size
-                                    .padding(2.dp) // Gap between boxes
+                                    .size(16.dp)
+                                    .padding(2.dp)
                                     .background(
                                         if (isActive) colors[category] ?: Color.Gray
                                         else Color.Gray.copy(alpha = 0.15f),
@@ -493,6 +486,30 @@ fun YearlyHeatmap(categoryActivity: Map<String, Set<Long>>, colors: Map<String, 
                         }
                     }
                 }
+            }
+
+            // --- THE LEGEND ---
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Less ", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+
+                // Four levels of "Activity" color
+                val color = colors[category] ?: Color.Gray
+                listOf(0.15f, 0.4f, 0.7f, 1.0f).forEach { opacity ->
+                    Box(
+                        Modifier
+                            .size(12.dp)
+                            .padding(1.dp)
+                            .background(color.copy(alpha = opacity), RoundedCornerShape(1.dp))
+                    )
+                }
+
+                Text(" More", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
             }
         }
     }
