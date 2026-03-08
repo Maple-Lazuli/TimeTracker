@@ -9,9 +9,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Menu
@@ -262,20 +264,29 @@ fun IOScreen(dbHelper: DatabaseHelper, context: Context) {
 @Composable
 fun MetricsScreen(dbHelper: DatabaseHelper) {
     val now = System.currentTimeMillis()
-    val dayStart = now - (24 * 60 * 60 * 1000)
-    val weekStart = now - (7 * 24 * 60 * 60 * 1000)
+    val dayInMs = 24 * 60 * 60 * 1000L
+    val weekStart = now - (7 * dayInMs)
+    val yearStart = now - (365 * dayInMs)
 
-    val dayData = remember { dbHelper.getTimeByCategory(dayStart) }
-    val weekData = remember { dbHelper.getTimeByCategory(weekStart) }
+    val dayData = remember { dbHelper.getTimeByCategory(now - dayInMs) }
     val allTimeData = remember { dbHelper.getRawSessions() }
 
     LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         item { Text("Daily Proportions", style = MaterialTheme.typography.headlineSmall) }
         item { SimplePieChart(dayData) }
+
         item { Spacer(Modifier.height(32.dp)) }
+
         item { Text("Weekly Activity (Hrs/Day)", style = MaterialTheme.typography.headlineSmall) }
         item { SimpleLineChart(allTimeData.filter { it.timestamp >= weekStart }) }
+
         item { Spacer(Modifier.height(32.dp)) }
+
+        item { Text("Yearly Consistency", style = MaterialTheme.typography.headlineSmall) }
+        item { YearlyHeatmap(allTimeData.filter { it.timestamp >= yearStart }) }
+
+        item { Spacer(Modifier.height(32.dp)) }
+
         item { Text("All-Time Cumulative Trends", style = MaterialTheme.typography.headlineSmall) }
         allTimeData.groupBy { it.main }.forEach { (main, sessions) ->
             item {
@@ -310,45 +321,84 @@ fun SimplePieChart(data: Map<String, Long>) {
         }
     }
 }
-
 @Composable
 fun SimpleLineChart(sessions: List<DatabaseHelper.SessionData>) {
     val dayInMs = 24 * 60 * 60 * 1000L
     val now = System.currentTimeMillis()
     val last7Days = (0..6).map { i -> (now / dayInMs) - i }.reversed()
+    val dayLabels = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+    // Note: In a real app, you'd use Calendar to get actual day names for these timestamps
 
     val traces = sessions.groupBy { it.main }.mapValues { (_, categorySessions) ->
         categorySessions.groupBy { it.timestamp / dayInMs }
             .mapValues { (_, daySessions) -> daySessions.sumOf { it.duration } / 3600f }
     }
 
+    val maxHours = traces.values.flatMap { it.values }.maxOrNull()?.coerceAtLeast(1f) ?: 5f
+
     Column {
-        Canvas(modifier = Modifier.fillMaxWidth().height(180.dp).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)).padding(16.dp)) {
+        Canvas(modifier = Modifier.fillMaxWidth().height(200.dp).padding(horizontal = 32.dp, vertical = 16.dp)) {
             val width = size.width
             val height = size.height
-            val spacing = if (last7Days.size > 1) width / (last7Days.size - 1) else width
-            val maxHours = traces.values.flatMap { it.values }.maxOrNull()?.coerceAtLeast(1f) ?: 5f
+            val spacing = width / (last7Days.size - 1)
 
+            // Draw Y-Axis Labels (0, Max/2, Max)
+            val yLabelCount = 3
+            for (i in 0 until yLabelCount) {
+                val yVal = height - (i * (height / (yLabelCount - 1)))
+                val hourVal = (i * (maxHours / (yLabelCount - 1))).toInt()
+                // Simple line for grid
+                drawLine(Color.Gray.copy(alpha = 0.2f), Offset(0f, yVal), Offset(width, yVal))
+            }
+
+            // Draw Traces
             traces.forEach { (category, dayMap) ->
                 val path = Path()
                 val color = CategoryColors.getColor(category)
-
                 last7Days.forEachIndexed { index, day ->
-                    val hours = dayMap[day] ?: 0f
                     val x = index * spacing
-                    val y = height - (hours / maxHours * height)
-
+                    val y = height - ((dayMap[day] ?: 0f) / maxHours * height)
                     if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                    drawCircle(color, radius = 6f, center = Offset(x, y))
+                    drawCircle(color, 6f, Offset(x, y))
                 }
-                drawPath(path = path, color = color, style = Stroke(width = 4.dp.toPx()))
+                drawPath(path, color, style = Stroke(4.dp.toPx()))
             }
         }
-        Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.Center) {
-            traces.keys.forEach { category ->
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 8.dp)) {
-                    Box(Modifier.size(8.dp).background(CategoryColors.getColor(category)))
-                    Text(" $category", style = MaterialTheme.typography.labelSmall)
+        // X-Axis Labels
+        Row(Modifier.fillMaxWidth().padding(horizontal = 32.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            last7Days.forEach { _ -> Text("Day", style = MaterialTheme.typography.labelSmall, color = Color.Gray) }
+        }
+    }
+}
+
+@Composable
+fun YearlyHeatmap(sessions: List<DatabaseHelper.SessionData>) {
+    val dayInMs = 24 * 60 * 60 * 1000L
+    val now = System.currentTimeMillis()
+    // We'll show the last 20 weeks to keep it readable on mobile
+    val weekCount = 20
+    val dayGrid = (0 until weekCount * 7).map { i -> (now / dayInMs) - i }.reversed()
+
+    val categoryActivity = sessions.groupBy { it.main }.mapValues { (_, s) ->
+        s.map { it.timestamp / dayInMs }.toSet()
+    }
+
+    Column(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 8.dp)) {
+        categoryActivity.forEach { (category, activeDays) ->
+            Text(category, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 8.dp))
+            Row(Modifier.padding(vertical = 2.dp)) {
+                dayGrid.forEach { dayTimestamp ->
+                    val isActive = activeDays.contains(dayTimestamp)
+                    Box(
+                        Modifier
+                            .size(12.dp)
+                            .padding(1.dp)
+                            .background(
+                                if (isActive) CategoryColors.getColor(category)
+                                else Color.Gray.copy(alpha = 0.1f),
+                                shape = androidx.compose.foundation.shape.RoundedCornerShape(2.dp)
+                            )
+                    )
                 }
             }
         }
