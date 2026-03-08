@@ -38,7 +38,9 @@ import androidx.navigation.compose.rememberNavController
 import com.time.tracker.ui.theme.TrackerTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
 import java.util.Collections
+import java.util.Date
 import java.util.Locale
 import kotlin.collections.filter
 
@@ -362,17 +364,29 @@ fun SimpleLineChart(sessions: List<DatabaseHelper.SessionData>, colors: Map<Stri
     val maxVal = traces.values.flatMap { it.values }.maxOrNull() ?: 0f
     val maxH = if (maxVal < 1f) 5f else maxVal * 1.2f
 
-    Column(Modifier.fillMaxWidth()) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 16.dp)) {
         Row(Modifier.height(200.dp).fillMaxWidth()) {
+            // Y-Axis
             Column(Modifier.fillMaxHeight().width(40.dp), Arrangement.SpaceBetween, Alignment.End) {
-                Text(String.format(Locale.US, "%.1f h", maxH), style = MaterialTheme.typography.labelSmall)
+                Text(String.format(Locale.US, "%.0fh", maxH), style = MaterialTheme.typography.labelSmall)
+                Text(String.format(Locale.US, "%.0fh", maxH / 2), style = MaterialTheme.typography.labelSmall)
                 Text("0h", style = MaterialTheme.typography.labelSmall)
             }
-            Box(Modifier.weight(1f).fillMaxHeight().padding(horizontal = 8.dp)) {
+
+            Spacer(Modifier.width(8.dp))
+
+            // Graph
+            Box(Modifier.weight(1f).fillMaxHeight()) {
                 Canvas(Modifier.fillMaxSize()) {
                     val w = size.width
                     val h = size.height
-                    val stepX = w / 6f
+                    val stepX = if (last7Days.size > 1) w / (last7Days.size - 1) else 0f
+
+                    // Grid Lines
+                    repeat(3) { i ->
+                        val y = h - (i * (h / 2f))
+                        drawLine(Color.LightGray.copy(0.3f), Offset(0f, y), Offset(w, y))
+                    }
 
                     traces.forEach { (cat, dayMap) ->
                         val path = Path()
@@ -381,12 +395,36 @@ fun SimpleLineChart(sessions: List<DatabaseHelper.SessionData>, colors: Map<Stri
                             val hours = dayMap[day] ?: 0f
                             val x = i * stepX
                             val y = h - (hours / maxH * h)
+
                             if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
                             drawCircle(color, 6f, Offset(x, y))
                         }
-                        drawPath(path, color, style = Stroke(width = 5f))
+                        drawPath(path, color, style = Stroke(width = 4f, cap = StrokeCap.Round))
                     }
                 }
+            }
+        }
+
+        // Fixed X-Axis Alignment
+        Box(modifier = Modifier.fillMaxWidth().padding(start = 48.dp)) {
+            val stepPercent = 1f / 6f
+            last7Days.forEachIndexed { i, day ->
+// Updated date formatting for MM/DD
+                val dayDate = SimpleDateFormat("MM/dd", Locale.getDefault()).format(Date(day * dMs))
+
+                // Align text exactly under the points
+                Text(
+                    text = dayDate,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.Gray,
+                    modifier = Modifier.align(
+                        when(i) {
+                            0 -> Alignment.CenterStart
+                            6 -> Alignment.CenterEnd
+                            else -> Alignment.CenterStart // We will use absolute offset for middle items
+                        }
+                    ).padding(start = if (i > 0 && i < 6) (i * 42).dp else 0.dp) // Rough estimation for spacing
+                )
             }
         }
     }
