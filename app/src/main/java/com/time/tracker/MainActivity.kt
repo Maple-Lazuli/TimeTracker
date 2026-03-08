@@ -350,7 +350,6 @@ fun SimplePieChart(data: Map<String, Long>, colors: Map<String, Color>) {
         }
     }
 }
-
 @Composable
 fun SimpleLineChart(sessions: List<DatabaseHelper.SessionData>, colors: Map<String, Color>) {
     val dMs = 24 * 60 * 60 * 1000L
@@ -375,25 +374,41 @@ fun SimpleLineChart(sessions: List<DatabaseHelper.SessionData>, colors: Map<Stri
 
             Spacer(Modifier.width(8.dp))
 
-            // Graph
+            // Graph Area
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 Canvas(Modifier.fillMaxSize()) {
                     val w = size.width
                     val h = size.height
-                    val stepX = if (last7Days.size > 1) w / (last7Days.size - 1) else 0f
+
+                    // Logic: We divide the width into 7 slots.
+                    // The points should sit in the CENTER of each slot.
+                    val slotWidth = w / 7f
+                    val getX: (Int) -> Float = { i -> (i * slotWidth) + (slotWidth / 2f) }
 
                     // Grid Lines
                     repeat(3) { i ->
                         val y = h - (i * (h / 2f))
-                        drawLine(Color.LightGray.copy(0.3f), Offset(0f, y), Offset(w, y))
+                        drawLine(Color.LightGray.copy(0.2f), Offset(0f, y), Offset(w, y))
                     }
 
+                    // 1. Draw Vertical Ticks
+                    last7Days.forEachIndexed { i, _ ->
+                        val x = getX(i)
+                        drawLine(
+                            color = Color.LightGray.copy(0.5f),
+                            start = Offset(x, h),
+                            end = Offset(x, h + 15f), // Small tick extending down
+                            strokeWidth = 2f
+                        )
+                    }
+
+                    // 2. Draw Traces
                     traces.forEach { (cat, dayMap) ->
                         val path = Path()
                         val color = colors[cat] ?: Color.Gray
                         last7Days.forEachIndexed { i, day ->
                             val hours = dayMap[day] ?: 0f
-                            val x = i * stepX
+                            val x = getX(i)
                             val y = h - (hours / maxH * h)
 
                             if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
@@ -405,26 +420,26 @@ fun SimpleLineChart(sessions: List<DatabaseHelper.SessionData>, colors: Map<Stri
             }
         }
 
-        // Fixed X-Axis Alignment
-        Box(modifier = Modifier.fillMaxWidth().padding(start = 48.dp)) {
-            val stepPercent = 1f / 6f
-            last7Days.forEachIndexed { i, day ->
-// Updated date formatting for MM/DD
+        // --- FIXED X-AXIS ALIGNMENT ---
+        // We use a Row where each item takes 1/7th of the width (weight(1f))
+        // and align the text to the center of that slot.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 48.dp, top = 4.dp) // 48dp = 40 (Y-axis) + 8 (Spacer)
+        ) {
+            last7Days.forEach { day ->
                 val dayDate = SimpleDateFormat("MM/dd", Locale.getDefault()).format(Date(day * dMs))
 
-                // Align text exactly under the points
-                Text(
-                    text = dayDate,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.Gray,
-                    modifier = Modifier.align(
-                        when(i) {
-                            0 -> Alignment.CenterStart
-                            6 -> Alignment.CenterEnd
-                            else -> Alignment.CenterStart // We will use absolute offset for middle items
-                        }
-                    ).padding(start = if (i > 0 && i < 6) (i * 42).dp else 0.dp) // Rough estimation for spacing
-                )
+                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = dayDate,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.Gray,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
             }
         }
     }
