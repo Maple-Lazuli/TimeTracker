@@ -44,18 +44,23 @@ import java.util.Date
 import java.util.Locale
 import kotlin.collections.filter
 
-// Helper for consistent chart colors
 object CategoryColors {
-    private val palette = listOf(0xFF6200EE, 0xFF03DAC5, 0xFF018786, 0xFFB00020, 0xFFFFAB00)
     private val colorMap = Collections.synchronizedMap(mutableMapOf<String, Color>())
 
     fun getColor(category: String): Color {
         return colorMap.getOrPut(category) {
-            Color(palette[colorMap.size % palette.size])
+            val hue = (colorMap.size * 137.5f) % 360f
+            Color.hsl(
+                hue = hue,
+                saturation = 0.65f,
+                lightness = 0.55f
+            )
         }
     }
+    fun reset() {
+        colorMap.clear()
+    }
 }
-
 class MainActivity : ComponentActivity() {
     private val dbHelper by lazy { DatabaseHelper(this) }
     override fun onCreate(savedInstanceState: Bundle?) {
