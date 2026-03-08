@@ -24,6 +24,7 @@ import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -523,26 +524,84 @@ fun YearlyHeatmap(categoryActivity: Map<String, Set<Long>>, colors: Map<String, 
 
 @Composable
 fun CumulativeSubCategoryChart(sessions: List<DatabaseHelper.SessionData>) {
-    val subTotals = sessions.groupBy { it.subs }.mapValues { it.value.sumOf { s -> s.duration } / 3600f }.toList().sortedByDescending { it.second }
+    val subTotals = sessions.groupBy { it.subs }
+        .mapValues { it.value.sumOf { s -> s.duration } / 3600f } // Divide by 3600 for seconds
+        .toList()
+        .sortedByDescending { it.second }
+
+    val totalMain = subTotals.sumOf { it.second.toDouble() }.toFloat()
 
     Column(modifier = Modifier.padding(vertical = 8.dp)) {
         subTotals.forEach { (sub, hours) ->
-            Column(Modifier.padding(vertical = 4.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(sub, style = MaterialTheme.typography.bodySmall)
-                    Text("${String.format("%.1f", hours)}h", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+            val progress = if (totalMain > 0) (hours / totalMain).coerceIn(0f, 1f) else 0f
+
+            // --- THE THERMAL LOGIC ---
+            val barBrush = remember(hours) {
+                val targetHours = 10000f
+
+                if (hours <= targetHours) {
+                    // HEAT SCALE: Red -> Orange -> Yellow
+                    // As hours increase, the "hotter" (more yellow) the gradient becomes
+                    val heatIntensity = (hours / targetHours).coerceIn(0f, 1f)
+                    Brush.horizontalGradient(
+                        colors = listOf(
+                            Color(0xFF8B0000), // Base: Deep Red
+                            lerpColor(Color(0xFFFF4500), Color(0xFFFFD700), heatIntensity) // Transition to Gold
+                        )
+                    )
+                } else {
+                    // BLUE FLAME: Yellow -> Cyan -> Electric Blue
+                    // For mastery beyond 10k hours
+                    val blueIntensity = ((hours - targetHours) / targetHours).coerceIn(0f, 1f)
+                    Brush.horizontalGradient(
+                        colors = listOf(
+                            Color(0xFFFFD700), // Base: The 10k Gold
+                            lerpColor(Color(0xFF00FFFF), Color(0xFF1E90FF), blueIntensity) // Transition to Blue
+                        )
+                    )
                 }
-                LinearProgressIndicator(
-                    progress = {
-                        val totalMain = subTotals.sumOf { it.second.toDouble() }.toFloat()
-                        if (totalMain > 0) hours / totalMain else 0f
-                    },
-                    modifier = Modifier.fillMaxWidth().height(8.dp),
-                    strokeCap = StrokeCap.Round
-                )
+            }
+
+            Column(Modifier.padding(vertical = 6.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(sub, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        text = String.format(Locale.US, "%.1fh", hours),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        // Color the text to match the intensity
+                        color = if (hours > 10000f) Color(0xFF1E90FF) else MaterialTheme.colorScheme.onSurface
+                    )
+                }
+
+                Spacer(Modifier.height(4.dp))
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(10.dp)
+                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(5.dp))
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(progress)
+                            .fillMaxHeight()
+                            .background(barBrush, RoundedCornerShape(5.dp))
+                    )
+                }
             }
         }
     }
+}
+
+// Helper function to blend colors based on progress
+fun lerpColor(start: Color, end: Color, fraction: Float): Color {
+    return Color(
+        red = start.red + (end.red - start.red) * fraction,
+        green = start.green + (end.green - start.green) * fraction,
+        blue = start.blue + (end.blue - start.blue) * fraction,
+        alpha = start.alpha + (end.alpha - start.alpha) * fraction
+    )
 }
 
 @Composable
