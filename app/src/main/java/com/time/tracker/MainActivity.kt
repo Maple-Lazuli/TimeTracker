@@ -43,6 +43,9 @@ import com.time.tracker.ui.theme.TrackerTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import java.util.Collections
 import java.util.Date
 import java.util.Locale
@@ -372,13 +375,27 @@ fun MetricsScreen(dbHelper: DatabaseHelper) {
     LaunchedEffect(Unit) {
         kotlin.runCatching {
             val list = dbHelper.getRawSessions().toList()
-            val dayInMs = 24 * 60 * 60 * 1000L
-            val now = System.currentTimeMillis()
+            val zoneId = ZoneId.systemDefault()
+            val now = Instant.now().atZone(zoneId)
+
+            val startOfDay = now.toLocalDate().atStartOfDay(zoneId).toInstant().toEpochMilli()
+            val localMidnightMillis = LocalDate.now(zoneId)
+                .atStartOfDay(zoneId)
+                .toInstant()
+                .toEpochMilli()
 
             val grouped = list.groupBy { it.main }
-            val heat = grouped.mapValues { (_, s) -> s.map { it.timestamp / dayInMs }.toSet() }
+
+            val heat = grouped.mapValues { (_, s) ->
+                s.map {
+                    Instant.ofEpochMilli(it.timestamp)
+                        .atZone(zoneId)
+                        .toLocalDate()
+                        .toEpochDay()
+                }.toSet()
+            }
             val colors = grouped.keys.associateWith { CategoryColors.getColor(it) }
-            val daily = dbHelper.getTimeByCategory(now - dayInMs)
+            val daily = dbHelper.getTimeByCategory(localMidnightMillis)
 
             MetricsState(list, grouped, heat, colors, daily)
         }.onSuccess {
