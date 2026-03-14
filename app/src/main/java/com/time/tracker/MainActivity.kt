@@ -411,7 +411,10 @@ fun MetricsScreen(dbHelper: DatabaseHelper) {
         val weekStart = System.currentTimeMillis() - (7 * 24 * 60 * 60 * 1000L)
 
         LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-            item { Text("Daily Proportions", style = MaterialTheme.typography.headlineSmall) }
+            item {
+                val todayDate = LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("EEEE, MMM d y"))
+                Text("$todayDate", style = MaterialTheme.typography.headlineSmall)
+            }
             item { SimplePieChart(s.dailyTotals, s.colors) }
 
             item { Spacer(Modifier.height(32.dp)) }
