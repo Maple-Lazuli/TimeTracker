@@ -332,6 +332,28 @@ fun IOScreen(dbHelper: DatabaseHelper, context: Context) {
         }
     }
 
+    val importDbLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let { selectedUri ->
+            try {
+                val dbFile = dbHelper.getDatabasePath(context)
+
+                dbHelper.close()
+
+                context.contentResolver.openInputStream(selectedUri)?.use { input ->
+                    dbFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+
+                scope.launch {
+                    snackbarHostState.showSnackbar("Database Imported! Please restart the app.")
+                }
+            } catch (e: Exception) {
+                scope.launch { snackbarHostState.showSnackbar("Import Failed: ${e.message}") }
+            }
+        }
+    }
+
     val exportCsvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
         uri?.let {
             context.contentResolver.openOutputStream(it)?.use { output ->
@@ -353,6 +375,16 @@ fun IOScreen(dbHelper: DatabaseHelper, context: Context) {
         Column(modifier = Modifier.padding(padding).padding(16.dp).fillMaxSize()) {
             Text("Data Management", style = MaterialTheme.typography.headlineSmall)
             OutlinedButton(onClick = { exportDbLauncher.launch("tracker_backup.db") }, modifier = Modifier.fillMaxWidth()) { Text("Export SQLite (.db)") }
+            OutlinedButton(
+                onClick = { importDbLauncher.launch("*/*") },
+                modifier = Modifier.fillMaxWidth(),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFB300)),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = Color(0xFFFFB300)
+                )
+            ) {
+                Text("Import SQLite (Overwrites Data)")
+            }
             HorizontalDivider(Modifier.padding(vertical = 24.dp))
             Button(onClick = { exportCsvLauncher.launch("time_logs.csv") }, modifier = Modifier.fillMaxWidth()) { Text("Export to CSV") }
         }
