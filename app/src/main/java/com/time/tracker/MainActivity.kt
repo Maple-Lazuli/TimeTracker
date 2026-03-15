@@ -609,15 +609,14 @@ fun SimpleLineChart(sessions: List<DatabaseHelper.SessionData>, colors: Map<Stri
 
 @Composable
 fun YearlyHeatmap(categoryActivity: Map<String, Set<Long>>, colors: Map<String, Color>) {
-    val dayInMs = 24 * 60 * 60 * 1000L
-    val now = System.currentTimeMillis()
-    val dayGrid = (0 until 140).map { i -> (now / dayInMs) - i }.reversed()
+    val todayEpoch = LocalDate.now().toEpochDay()
+
+    val dayGrid = (0 until 140).map { i -> todayEpoch - i }.reversed()
     val columns = dayGrid.chunked(4)
     val scrollState = rememberScrollState(initial = Int.MAX_VALUE)
 
     Column(modifier = Modifier.padding(vertical = 12.dp)) {
         categoryActivity.forEach { (category, activeDays) ->
-
             Text(
                 text = category,
                 style = MaterialTheme.typography.labelMedium,
@@ -632,8 +631,9 @@ fun YearlyHeatmap(categoryActivity: Map<String, Set<Long>>, colors: Map<String, 
             ) {
                 columns.forEach { columnDays ->
                     Column {
-                        columnDays.forEach { dayTimestamp ->
-                            val isActive = activeDays.contains(dayTimestamp)
+                        columnDays.forEach { dayEpochIndex ->
+                            // Compare using the EpochDay index
+                            val isActive = activeDays.contains(dayEpochIndex)
                             Box(
                                 Modifier
                                     .size(16.dp)
@@ -648,32 +648,21 @@ fun YearlyHeatmap(categoryActivity: Map<String, Set<Long>>, colors: Map<String, 
                     }
                 }
             }
-
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 16.dp),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("Less ", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-
                 val color = colors[category] ?: Color.Gray
                 listOf(0.15f, 0.4f, 0.7f, 1.0f).forEach { opacity ->
-                    Box(
-                        Modifier
-                            .size(12.dp)
-                            .padding(1.dp)
-                            .background(color.copy(alpha = opacity), RoundedCornerShape(1.dp))
-                    )
+                    Box(Modifier.size(12.dp).padding(1.dp).background(color.copy(alpha = opacity), RoundedCornerShape(1.dp)))
                 }
-
                 Text(" More", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
             }
         }
     }
 }
-
 
 @Composable
 fun OverallCategorySummary(sessions: List<DatabaseHelper.SessionData>) {
