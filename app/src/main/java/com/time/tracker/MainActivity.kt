@@ -703,22 +703,60 @@ fun OverallCategorySummary(sessions: List<DatabaseHelper.SessionData>) {
 
 @Composable
 fun CumulativeSubCategoryChart(sessions: List<DatabaseHelper.SessionData>) {
-    val subTotals = sessions.groupBy { it.subs }
-        .mapValues { it.value.sumOf { s -> s.duration.toDouble() }.toFloat() / 3600f }
-        .toList()
-        .sortedByDescending { it.second }
+    // 1. Flatten and aggregate individual sub-tags
+    val subTotals = remember(sessions) {
+        val totalsMap = mutableMapOf<String, Float>()
 
-    val maxSubHours = subTotals.sumOf { it.second.toDouble() }.toFloat()
+        sessions.forEach { session ->
+            val durationHours = session.duration.toFloat() / 3600f
+
+            // Split by comma, trim spaces, and remove empty/unspecified tags
+            val individualSubs = session.subs
+                .split(",")
+                .map { it.trim() }
+                .filter { it.isNotBlank() && !it.equals("unspecified", ignoreCase = true) }
+
+            individualSubs.forEach { sub ->
+                totalsMap[sub] = (totalsMap[sub] ?: 0f) + durationHours
+            }
+        }
+        totalsMap.toList().sortedByDescending { it.second }
+    }
+
+    // 2. Calculate the total for the parent category for percentage math
+    val totalCategoryHours = sessions.sumOf { it.duration.toDouble() }.toFloat() / 3600f
 
     Column(modifier = Modifier.padding(vertical = 8.dp)) {
+        if (subTotals.isEmpty()) {
+            Text(
+                "No sub-tags recorded",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.Gray,
+                modifier = Modifier.padding(vertical = 8.dp)
+            )
+        }
+
         subTotals.forEach { (sub, hours) ->
-            val progress = if (maxSubHours > 0) (hours / maxSubHours).coerceIn(0f, 1f) else 0f
+            // Progress is relative to the total category time
+            val progress = if (totalCategoryHours > 0) (hours / totalCategoryHours).coerceIn(0f, 1f) else 0f
+            val percentage = if (totalCategoryHours > 0) (hours / totalCategoryHours) * 100 else 0f
 
             Column(Modifier.padding(vertical = 6.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(sub, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Text(
-                        text = String.format(Locale.US, "%.1fh", hours),
+                        text = sub,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    // Displaying hours and the calculated percentage of the main category
+                    Text(
+                        text = String.format(Locale.US, "%.1fh (%.0f%%)", hours, percentage),
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = if (hours > 10000f) Color(0xFF1E90FF) else MaterialTheme.colorScheme.onSurface
@@ -727,6 +765,7 @@ fun CumulativeSubCategoryChart(sessions: List<DatabaseHelper.SessionData>) {
 
                 Spacer(Modifier.height(4.dp))
 
+                // Progress Bar
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
